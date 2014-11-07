@@ -1,7 +1,12 @@
 #!/bin/bash
+set -e -o pipefail
 
-#  If we're on the presubmit branch, the stable Dart release, and all unit
+#  If we're on the presubmit branch, the dev Dart release, and all unit
 #  tests pass, merge the presubmit branch into master and push it.
+
+echo '***************'
+echo '** PRESUBMIT **'
+echo '***************'
 
 
 CHANNEL=`echo $JOB | cut -f 2 -d -`
@@ -11,7 +16,7 @@ echo Current channel is: $CHANNEL
 echo Current branch is: $TRAVIS_BRANCH
 echo Test result is: $TRAVIS_TEST_RESULT
 
-if [ "$CHANNEL" = "stable" ] && [ "$TRAVIS_REPO_SLUG" = "angular/angular.dart" ]; then
+if [ "$TRAVIS_REPO_SLUG" = "angular/angular.dart" ]; then
   if [ $TRAVIS_TEST_RESULT -eq 0 ] && [[ $TRAVIS_BRANCH == "presubmit-"* ]]; then
     git config credential.helper "store --file=.git/credentials"
     # travis encrypt GITHUB_TOKEN_ANGULAR_ORG=??? --repo=angular/angular.dart

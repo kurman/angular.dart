@@ -1,6 +1,7 @@
 library form_spec;
 
 import '../_specs.dart';
+import 'package:browser_detect/browser_detect.dart';
 
 void main() {
   describe('form', () {
@@ -141,6 +142,13 @@ void main() {
 
         var form = scope.context['myForm'];
         expect(form).toBeValid();
+      });
+
+      it('should expose NgForm as NgControl', (Scope scope, TestBed _) {
+        _.compile('<form name="myForm" probe="formProbe"><input type="text" /></form>');
+        scope.apply();
+
+        expect(scope.context['formProbe'].injector.get(NgControl) is NgForm).toBeTruthy();
       });
 
       it('should add and remove the correct flags when set to valid and to invalid',
@@ -418,12 +426,15 @@ void main() {
 
         expect(submissionEvent.defaultPrevented).toBe(false);
         element.dispatchEvent(submissionEvent);
-        expect(submissionEvent.defaultPrevented).toBe(true);
+        // TODO(vicb) - re-enable once the bug is fixed in Dart
+        // https://github.com/angular/angular.dart/issues/1309
+        if (!browser.isIe) {
+          expect(submissionEvent.defaultPrevented).toBe(true);
+        }
 
         Event fakeEvent = new Event.eventType('CustomEvent', 'running');
-
         expect(fakeEvent.defaultPrevented).toBe(false);
-        element.dispatchEvent(submissionEvent);
+        element.dispatchEvent(fakeEvent);
         expect(fakeEvent.defaultPrevented).toBe(false);
       });
 
@@ -569,7 +580,7 @@ void main() {
 
       describe('custom validators', () {
         beforeEachModule((Module module) {
-          module.type(MyCustomFormValidator);
+          module.bind(MyCustomFormValidator);
         });
 
         it('should display the valid and invalid CSS classes on the element for custom validations', (TestBed _, Scope scope) {
@@ -711,20 +722,20 @@ void main() {
 
     describe('regression tests: form', () {
       beforeEachModule((Module module) {
-        module.type(NgForm);
+        module.bind(NgForm);
       });
 
       it('should be resolvable by injector if configured by user.',
-           (Injector injector, Compiler compiler, DirectiveMap directives) {
+           (Scope scope, Injector injector, Compiler compiler, DirectiveMap directives) {
         var element = es('<form></form>');
-        expect(() => compiler(element, directives)(injector, element))
+        expect(() => compiler(element, directives)(scope, null, element))
             .not.toThrow();
       });
     });
   });
 }
 
-@NgDirective(
+@Decorator(
     selector: '[custom-form-validation]')
 class MyCustomFormValidator extends NgValidator {
   final String name = 'custom';

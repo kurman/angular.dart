@@ -1,72 +1,83 @@
 /**
- * Core functionality for angular.dart, a web framework for Dart.
+ * Core functionality for [angular.dart](#angular/angular), a web framework for Dart.
  *
- *
- * You must import the angular library to use it with Dart, like so:
- *
- *      import 'package:angular/core/module.dart';
- *
- * The angular.core library includes Angular's Directive and Filter classes:
- *
- *  - [angular.directive](#angular/angular-directive) lists all the basic directives
- *  - [angular.filter] (#angular/angular-filter) lists all the basic filters
- *
- * You might also want to optionally import the following Angular libraries:
- *
- *   - [angular.animate](#angular/angular-animate) supports CSS animations that modify the
- *   lifecycle of a DOM
- *   element
- *   - [angular.mock](#angular/angular-mock) provides classes and utilities for testing and
- *   prototyping
- *   - [angular.perf](#angular/angular-perf) provides classes to help evaluate performance in your
- *   app
- *
- *
- * Further reading:
- *
- *   - AngularDart [Overview](http://www.angulardart.org)
- *   - [Tutorial](https://angulardart.org/tutorial/)
- *   - [Mailing List](http://groups.google.com/d/forum/angular-dart?hl=en)
+ * This library is included as part of [angular.dart](#angular/angular). The angular.core library
+ * provides all of the fundamental Classes and Type Definitions that provide the basis for
+ * formatters (in [angular .formatter](#angular-formatter)) and directives (in [angular.directive]
+ * (#angular-directive)).
  *
  */
 library angular.core;
 
+export "package:angular/change_detection/watch_group.dart" show
+    ReactionFn;
+
+export "package:angular/core/parser/parser.dart" show
+    Parser, ClosureMap;
+
+export "package:angular/change_detection/change_detection.dart" show
+    AvgStopwatch,
+    FieldGetterFactory;
+
+export "package:angular/cache/module.dart" show
+    CacheRegister,
+    CacheRegisterStats;
+
+export "package:angular/core_dom/directive_injector.dart" show
+    DirectiveInjector;
 
 export "package:angular/core_dom/module_internal.dart" show
     Animation,
     AnimationResult,
     BrowserCookies,
     Compiler,
+    CompilerConfig,
     Cookies,
+    BoundViewFactory,
+    DirectiveMap,
     ElementProbe,
     EventHandler,
     Http,
     HttpBackend,
+    HttpConfig,
     HttpDefaultHeaders,
     HttpDefaults,
     HttpInterceptor,
     HttpInterceptors,
     HttpResponse,
     HttpResponseConfig,
+    LocationWrapper,
+    NgAnimate,
+    NgElement,
     NoOpAnimation,
     NullTreeSanitizer,
-    NgAnimate,
+    PendingAsync,
+    Animate,
     RequestErrorInterceptor,
     RequestInterceptor,
     Response,
     ResponseError,
+    ResourceResolverConfig,
+    ResourceUrlResolver,
+    UrlRewriter,
     TemplateCache,
     View,
+    ViewFactoryCache,
     ViewFactory,
     ViewPort;
+
 export "package:angular/core/module_internal.dart" show
     CacheStats,
+    ComponentCssRewriter,
     ExceptionHandler,
     Interpolate,
-    NgZone,
+    VmTurnZone,
+    WebPlatform,
     PrototypeMap,
     RootScope,
+    ContextLocals,
     Scope,
+    ScopeAware,
     ScopeDigestTTL,
     ScopeEvent,
     ScopeStats,

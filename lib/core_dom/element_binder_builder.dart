@@ -1,20 +1,32 @@
 part of angular.core.dom_internal;
 
-@NgInjectableService()
+@Injectable()
 class ElementBinderFactory {
   final Parser _parser;
   final Profiler _perf;
+  final CompilerConfig _config;
   final Expando _expando;
+  final ASTParser astParser;
+  final ComponentFactory componentFactory;
+  final ShadowDomComponentFactory shadowDomComponentFactory;
+  final TranscludingComponentFactory transcludingComponentFactory;
 
-  ElementBinderFactory(this._parser, this._perf, this._expando);
+  ElementBinderFactory(this._parser, this._perf, this._config, this._expando,
+      this.astParser, this.componentFactory, this.shadowDomComponentFactory, this.transcludingComponentFactory);
 
   // TODO: Optimize this to re-use a builder.
-  ElementBinderBuilder builder() => new ElementBinderBuilder(this, _parser);
+  ElementBinderBuilder builder(FormatterMap formatters, DirectiveMap directives, Injector injector) =>
+    new ElementBinderBuilder(this, formatters, directives, injector);
 
-  ElementBinder binder(component, decorators, onEvents, childMode) =>
-      new ElementBinder(_perf, _expando, component, decorators, onEvents, childMode);
-  TemplateElementBinder templateBinder(template, transclude, onEvents, childMode) =>
-      new TemplateElementBinder(_perf, _expando, template, transclude, onEvents, childMode);
+  ElementBinder binder(ElementBinderBuilder b) =>
+
+      new ElementBinder(_perf, _expando, _parser, _config, b._injector,
+          b.componentData, b.decorators, b.onEvents, b.bindAttrs, b.childMode);
+
+  TemplateElementBinder templateBinder(
+      ElementBinderBuilder b, ElementBinder transclude) =>
+      new TemplateElementBinder(_perf, _expando, _parser, _config, b._injector,
+          b.template, transclude, b.onEvents, b.bindAttrs, b.childMode);
 }
 
 /**
@@ -22,156 +34,117 @@ class ElementBinderFactory {
  * building ElementBinders.
  */
 class ElementBinderBuilder {
-  ElementBinderFactory _factory;
-  final Parser _parser;
+  static final RegExp _MAPPING = new RegExp(r'^(@|=>!|=>|<=>|&)\s*(.*)$');
 
-  final onEvents = <String, String>{};
+  final ElementBinderFactory _factory;
+  final DirectiveMap _directives;
+  final FormatterMap _formatters;
 
-  var decorators = <DirectiveRef>[];
+  /// "on-*" attribute names and values, added by a [DirectiveSelector]
+  final onEvents = new HashMap<String, String>();
+  /// "bind-*" attribute names and values, added by a [DirectiveSelector]
+  final bindAttrs = new HashMap<String, AST>();
+
+  final decorators = <DirectiveRef>[];
+  final Injector _injector;
   DirectiveRef template;
-  ViewFactory templateViewFactory;
-
-  DirectiveRef component;
+  BoundComponentData componentData;
 
   // Can be either COMPILE_CHILDREN or IGNORE_CHILDREN
-  String childMode = NgAnnotation.COMPILE_CHILDREN;
+  String childMode = Directive.COMPILE_CHILDREN;
 
+  ElementBinderBuilder(this._factory, this._formatters, this._directives, this._injector);
 
-  ElementBinderBuilder(this._factory, this._parser);
-
+  /**
+   * Adds [DirectiveRef]s to this [ElementBinderBuilder].
+   *
+   * [addDirective] gets called from [Selector.matchElement] for each directive triggered by the
+   * element.
+   *
+   * When the [Directive] annotation defines a `map`, the attribute mappings are added to the
+   * [DirectiveRef].
+   */
   addDirective(DirectiveRef ref) {
     var annotation = ref.annotation;
     var children = annotation.children;
 
-    if (annotation.children == NgAnnotation.TRANSCLUDE_CHILDREN) {
+    if (annotation.children == Directive.TRANSCLUDE_CHILDREN) {
       template = ref;
-    } else if (annotation is NgComponent) {
-      component = ref;
+    } else if (annotation is Component) {
+      ComponentFactory factory;
+      var annotation = ref.annotation as Component;
+      if (annotation.useShadowDom == true) {
+        factory = _factory.shadowDomComponentFactory;
+      } else if (annotation.useShadowDom == false) {
+        factory = _factory.transcludingComponentFactory;
+      } else {
+        factory = _factory.componentFactory;
+      }
+
+      componentData = new BoundComponentData(ref, () => factory.bind(ref, _directives, _injector));
     } else {
       decorators.add(ref);
     }
 
-    if (annotation.children == NgAnnotation.IGNORE_CHILDREN) {
+    if (annotation.children == Directive.IGNORE_CHILDREN) {
       childMode = annotation.children;
     }
 
-    createMappings(ref);
-  }
+    if (annotation.map != null) {
+      annotation.map.forEach((attrName, mapping) {
+        Match match = _MAPPING.firstMatch(mapping);
+        if (match == null) {
+          throw "Unknown mapping '$mapping' for attribute '$attrName'.";
+        }
+        var mode = match[1];
+        var dstPath = match[2];
 
-  static RegExp _MAPPING = new RegExp(r'^(\@|=\>\!|\=\>|\<\=\>|\&)\s*(.*)$');
+        String dstExpression = dstPath.isEmpty ? attrName : dstPath;
+        AST dstAST = _factory.astParser(dstExpression); // no formatters
 
-  createMappings(DirectiveRef ref) {
-    NgAnnotation annotation = ref.annotation;
-    if (annotation.map != null) annotation.map.forEach((attrName, mapping) {
-      Match match = _MAPPING.firstMatch(mapping);
-      if (match == null) {
-        throw "Unknown mapping '$mapping' for attribute '$attrName'.";
-      }
-      var mode = match[1];
-      var dstPath = match[2];
+        // Look up the value of attrName and compute an AST
+        AST ast;
+        if (mode != '@' && mode != '&') {
+          var value = attrName == "." ? ref.value : (ref.element as dom.Element).attributes[attrName];
+          if (value == null || value.isEmpty) { value = "''"; }
+          ast = _factory.astParser(value, formatters: _formatters);
+        }
 
-      String dstExpression = dstPath.isEmpty ? attrName : dstPath;
-      Expression dstPathFn = _parser(dstExpression);
-      if (!dstPathFn.isAssignable) {
-        throw "Expression '$dstPath' is not assignable in mapping '$mapping' "
-            "for attribute '$attrName'.";
-      }
-      ApplyMapping mappingFn;
-      switch (mode) {
-        case '@':
-          mappingFn = (NodeAttrs attrs, Scope scope, Object controller,
-                       FilterMap filters, notify()) {
-            attrs.observe(attrName, (value) {
-              dstPathFn.assign(controller, value);
-              notify();
-            });
-          };
-          break;
-        case '<=>':
-          mappingFn = (NodeAttrs attrs, Scope scope, Object controller,
-                       FilterMap filters, notify()) {
-            if (attrs[attrName] == null) return notify();
-            String expression = attrs[attrName];
-            Expression expressionFn = _parser(expression);
-            var viewOutbound = false;
-            var viewInbound = false;
-            scope.watch(
-                expression, (inboundValue, _) {
-                  if (!viewInbound) {
-                    viewOutbound = true;
-                    scope.rootScope.runAsync(() => viewOutbound = false);
-                    var value = dstPathFn.assign(controller, inboundValue);
-                    notify();
-                    return value;
-                  }
-                },
-                filters: filters
-            );
-            if (expressionFn.isAssignable) {
-              scope.watch(
-                  dstExpression, (outboundValue, _) {
-                    if (!viewOutbound) {
-                      viewInbound = true;
-                      scope.rootScope.runAsync(() => viewInbound = false);
-                      expressionFn.assign(scope.context, outboundValue);
-                      notify();
-                    }
-                  },
-                  context: controller,
-                  filters: filters
-              );
-            }
-          };
-          break;
-        case '=>':
-          mappingFn = (NodeAttrs attrs, Scope scope, Object controller,
-                       FilterMap filters, notify()) {
-            if (attrs[attrName] == null) return notify();
-            Expression attrExprFn = _parser(attrs[attrName]);
-            var shadowValue = null;
-            scope.watch(attrs[attrName], (v, _) {
-              dstPathFn.assign(controller, shadowValue = v);
-              notify();
-            },
-            filters: filters);
-          };
-          break;
-        case '=>!':
-          mappingFn = (NodeAttrs attrs, Scope scope, Object controller,
-                       FilterMap filters, notify()) {
-            if (attrs[attrName] == null) return notify();
-            Expression attrExprFn = _parser(attrs[attrName]);
-            var watch;
-            watch = scope.watch(attrs[attrName], (value, _) {
-              if (dstPathFn.assign(controller, value) != null) {
-                watch.remove();
-              }
-            },
-            filters: filters);
-            notify();
-          };
-          break;
-        case '&':
-          mappingFn = (NodeAttrs attrs, Scope scope, Object dst,
-                       FilterMap filters, notify()) {
-            dstPathFn.assign(dst, _parser(attrs[attrName])
-            .bind(scope.context, ScopeLocals.wrapper));
-            notify();
-          };
-          break;
-      }
-      ref.mappings.add(mappingFn);
-    });
-  }
-
-  ElementBinder get binder {
-    if (template != null) {
-      var transclude = _factory.binder(component, decorators, onEvents, childMode);
-      return _factory.templateBinder(template, transclude, onEvents, childMode);
-
-    } else {
-      return _factory.binder(component, decorators, onEvents, childMode);
+        ref.mappings.add(new MappingParts(attrName, ast, mode, dstAST, mapping));
+      });
     }
-
   }
+
+  /// Creates an returns an [ElementBinder] or a [TemplateElementBinder]
+  ElementBinder get binder {
+    var elBinder = _factory.binder(this);
+    return template == null ? elBinder : _factory.templateBinder(this, elBinder);
+  }
+}
+
+/**
+ * Data used by the ComponentFactory to construct components.
+ */
+class BoundComponentData {
+  final DirectiveRef ref;
+  BoundComponentFactory _instance;
+  Function _gen;
+  BoundComponentFactory get factory {
+    if (_instance != null) return _instance;
+    _instance = _gen();
+    _gen = null; // Clear the gen function for GC.
+    return _instance;
+  }
+
+  Component get component => ref.annotation as Component;
+  @Deprecated('Use typeKey instead')
+  Type get type => ref.type;
+  Key get typeKey => ref.typeKey;
+
+
+  /**
+   * * [ref]: The components directive ref
+   * * [_gen]: A function which returns a [BoundComponentFactory].  Called lazily.
+   */
+  BoundComponentData(this.ref, this._gen);
 }

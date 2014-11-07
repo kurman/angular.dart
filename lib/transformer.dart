@@ -1,16 +1,18 @@
 library angular.transformer;
 
+import 'dart:async';
 import 'dart:io';
 import 'package:angular/tools/transformer/expression_generator.dart';
 import 'package:angular/tools/transformer/metadata_generator.dart';
 import 'package:angular/tools/transformer/static_angular_generator.dart';
 import 'package:angular/tools/transformer/html_dart_references_generator.dart';
+import 'package:angular/tools/transformer/type_relative_uri_generator.dart';
 import 'package:angular/tools/transformer/options.dart';
 import 'package:barback/barback.dart';
 import 'package:code_transformers/resolver.dart';
-import 'package:di/transformer/injector_generator.dart' as di;
-import 'package:di/transformer/options.dart' as di;
+import 'package:di/transformer.dart' as di;
 import 'package:path/path.dart' as path;
+import 'package:observe/transformer.dart' show ObservableTransformer;
 
 
  /**
@@ -33,11 +35,10 @@ class AngularTransformerGroup implements TransformerGroup {
 TransformOptions _parseSettings(Map args) {
   // Default angular annotations for injectable types
   var annotations = [
-      'angular.core.annotation.NgInjectableService',
-      'angular.core.annotation.NgDirective',
-      'angular.core.annotation.NgController',
-      'angular.core.annotation.NgComponent',
-      'angular.core.annotation.NgFilter'];
+      'di.annotations.Injectable',
+      'angular.core.annotation_src.Decorator',
+      'angular.core.annotation_src.Component',
+      'angular.core.annotation_src.Formatter'];
   annotations.addAll(_readStringListValue(args, 'injectable_annotations'));
 
   // List of types which are otherwise not indicated as being injectable.
@@ -47,10 +48,7 @@ TransformOptions _parseSettings(Map args) {
   injectedTypes.addAll(_readStringListValue(args, 'injected_types'));
 
   var sdkDir = _readStringValue(args, 'dart_sdk', required: false);
-  if (sdkDir == null) {
-    // Assume the Pub executable is always coming from the SDK.
-    sdkDir =  path.dirname(path.dirname(Platform.executable));
-  }
+  if (sdkDir == null) sdkDir = dartSdkDirectory;
 
   var diOptions = new di.TransformOptions(
       injectableAnnotations: annotations,
@@ -119,13 +117,46 @@ Map<String, String> _readStringMapValue(Map args, String name) {
   return value;
 }
 
-List<List<Transformer>> _createPhases(TransformOptions options) {
+Transformer _staticGenerator(TransformOptions options) {
   var resolvers = new Resolvers(options.sdkDirectory);
-  return [
-    [new HtmlDartReferencesGenerator(options)],
-    [new ExpressionGenerator(options, resolvers)],
-    [new di.InjectorGenerator(options.diOptions, resolvers)],
-    [new MetadataGenerator(options, resolvers)],
-    [new StaticAngularGenerator(options, resolvers)],
+  return new _SerialTransformer([
+      new TypeRelativeUriGenerator(options, resolvers),
+      new ExpressionGenerator(options, resolvers),
+      new MetadataGenerator(options, resolvers),
+      new StaticAngularGenerator(options, resolvers)
+  ]);
+}
+
+List<List<Transformer>> _createPhases(TransformOptions options) =>
+  [
+    [ new ObservableTransformer() ],
+    [ new HtmlDartReferencesGenerator(options) ],
+    [ new di.InjectorGenerator(options.diOptions, new Resolvers(options.sdkDirectory)) ],
+    [ _staticGenerator(options) ]
   ];
+
+/// Helper which runs a group of transformers serially and ensures that
+/// transformers with shared data are always applied in a specific order.
+///
+/// Transformers which communicate only via assets do not need this additional
+/// synchronization.
+///
+/// This is used by Angular to ensure ordering of references to the cached
+/// resolvers.
+class _SerialTransformer extends Transformer {
+  final Iterable<Transformer> _transformers;
+  _SerialTransformer(this._transformers);
+
+  Future<bool> isPrimary(input) =>
+      Future.wait(_transformers.map((t) => t.isPrimary(input)))
+          .then((l) => l.any((result) => result));
+
+  Future apply(Transform transform) {
+    return Future.forEach(_transformers, (t) {
+      return new Future.value(t.isPrimary(transform.primaryInput))
+        .then((isPrimary) {
+          if (isPrimary) return t.apply(transform);
+        });
+    });
+  }
 }

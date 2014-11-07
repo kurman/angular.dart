@@ -2,7 +2,9 @@ library angular.tools.transformer.expression_generator;
 
 import 'dart:async';
 import 'package:analyzer/src/generated/element.dart';
+import 'package:angular/cache/module.dart';
 import 'package:angular/core/parser/parser.dart';
+import 'package:angular/core/parser/lexer.dart';
 import 'package:angular/tools/html_extractor.dart';
 import 'package:angular/tools/parser_getter_setter/generator.dart';
 import 'package:angular/tools/source_crawler.dart';
@@ -12,7 +14,7 @@ import 'package:angular/tools/transformer/referenced_uris.dart';
 import 'package:barback/barback.dart';
 import 'package:code_transformers/resolver.dart';
 import 'package:di/di.dart';
-import 'package:di/dynamic_injector.dart';
+import 'package:di/src/reflector_dynamic.dart';
 import 'package:path/path.dart' as path;
 
 /**
@@ -30,8 +32,6 @@ class ExpressionGenerator extends Transformer with ResolverTransformer {
     this.resolvers = resolvers;
   }
 
-  Future<bool> isPrimary(Asset input) => options.isDartEntry(input);
-
   Future applyResolver(Transform transform, Resolver resolver) {
     var asset = transform.primaryInput;
     var outputBuffer = new StringBuffer();
@@ -47,11 +47,13 @@ class ExpressionGenerator extends Transformer with ResolverTransformer {
     return _getHtmlSources(transform, resolver)
         .forEach(htmlExtractor.parseHtml)
         .then((_) {
-      var module = new Module()
-        ..type(Parser, implementedBy: DynamicParser)
-        ..type(ParserBackend, implementedBy: DartGetterSetterGen);
-      var injector =
-          new DynamicInjector(modules: [module], allowImplicitInjection: true);
+      var module = new Module.withReflector(getReflector())
+        ..install(new CacheModule.withReflector(getReflector()))
+        ..bind(Parser)
+        ..bind(ParserBackend, toImplementation: DartGetterSetterGen)
+        ..bind(Lexer)
+        ..bind(_ParserGetterSetter);
+      var injector = new ModuleInjector([module]);
 
       injector.get(_ParserGetterSetter).generateParser(
           htmlExtractor.expressions.toList(), outputBuffer);
@@ -77,10 +79,11 @@ class ExpressionGenerator extends Transformer with ResolverTransformer {
 
     var controller = new StreamController<String>();
     var assets = options.htmlFiles
-        .map((path) => new AssetId(id.package, path))
+        .map((path) => _uriToAssetId(path, transform))
+        .where((id) => id != null)
         .toList();
 
-    // Get all of the contents of templates in @NgComponent(templateUrl:'...')
+    // Get all of the contents of templates in @Component(templateUrl:'...')
     gatherReferencedUris(transform, resolver, options,
         templatesOnly: true).then((templates) {
       templates.values.forEach(controller.add);
@@ -95,13 +98,29 @@ class ExpressionGenerator extends Transformer with ResolverTransformer {
         // Add any manually specified HTML files.
         assets.map((id) => transform.readInputAsString(id))
             .map((future) =>
-                future.then(controller.add).catchError(controller.addError))
+                future.then(controller.add).catchError((e) {
+                  transform.logger.warning('Unable to find $id from html_files '
+                      'in pubspec.yaml.');
+                }))
         ).then((_) {
           controller.close();
         });
     });
 
     return controller.stream;
+  }
+
+  AssetId _uriToAssetId(String uri, Transform transform) {
+    if (path.url.isAbsolute(uri)) {
+      var parts = path.url.split(uri);
+      if (parts[1] == 'packages') {
+        var pkgPath = path.url.join('lib', path.url.joinAll(parts.skip(3)));
+        return new AssetId(parts[2], pkgPath);
+      }
+      transform.logger.warning('Cannot cache non-package absolute URIs. $uri');
+      return null;
+    }
+    return new AssetId(transform.primaryInput.id.package, uri);
   }
 
   /// Finds any HTML files referencing the primary input of the transform.
@@ -117,7 +136,7 @@ class ExpressionGenerator extends Transformer with ResolverTransformer {
 }
 
 void _writeStaticExpressionHeader(AssetId id, StringSink sink) {
-  var libPath = path.withoutExtension(id.path).replaceAll('/', '.');
+  var libPath = path.withoutExtension(id.path).replaceAll('/', '.').replaceAll('-', '_');
   sink.write('''
 library ${id.package}.$libPath.generated_expressions;
 

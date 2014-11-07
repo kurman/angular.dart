@@ -9,10 +9,11 @@ part of angular.mock;
  *
  *    rootScope.myProbe.directive(SomeAttrDirective);
  */
-@NgDirective(selector: '[probe]')
-class Probe implements NgDetachAware {
+@Decorator(selector: '[probe]')
+@deprecated
+class Probe implements DetachAware {
   final Scope scope;
-  final Injector injector;
+  final DirectiveInjector injector;
   final Element element;
   String _probeName;
 

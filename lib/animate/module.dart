@@ -14,17 +14,17 @@
  * elements for block level directives such as `ng-if`, `ng-repeat`,
  * `ng-hide`, and more.
  *
- * To use, install the NgAnimateModule into your main module:
+ * To use, install the AnimationModule into your main module:
  *
  *     var module = new Module()
- *       ..install(new NgAnimateModule());
+ *       ..install(new AnimationModule());
  *
  * Once the module has been installed, all block level DOM manipulations will
  * be routed through the [CssAnimate] class instead of the
  * default [NgAnimate] implementation. This will, in turn,
  * perform the tracking, manipulation, and computation for animations.
  *
- * As an example of how this works, lets walk through what happens whan an
+ * As an example of how this works, let's walk through what happens whan an
  * element is added to the DOM. The [CssAnimate] implementation will add the
  * `.ng-enter` class to new DOM elements when they are inserted into the DOM
  * by a directive and will read the computed style. If there is a
@@ -108,11 +108,9 @@ import 'package:angular/core_dom/dom_util.dart' as util;
 import 'package:logging/logging.dart';
 import 'package:perf_api/perf_api.dart';
 import 'package:di/di.dart';
+import 'package:di/annotations.dart';
 
-@MirrorsUsed(targets: const [
-    'angular.animate'
-])
-import 'dart:mirrors' show MirrorsUsed;
+import 'dart:collection';
 
 part 'animations.dart';
 part 'animation_loop.dart';
@@ -124,7 +122,7 @@ part 'ng_animate.dart';
 final Logger _logger = new Logger('ng.animate');
 
 /**
- * Installing the NgAnimateModule will install a [CssAnimate] implementation of
+ * Installing the AnimationModule will install a [CssAnimate] implementation of
  * the [NgAnimate] interface in your application. This will change the behavior
  * of view construction, and some of the native directives to allow you to add
  * and define css transition and keyframe animations for the styles of your
@@ -153,14 +151,14 @@ final Logger _logger = new Logger('ng.animate');
  *       opacity: 0;
  *     }
  */
-class NgAnimateModule extends Module {
-  NgAnimateModule() {
-    type(AnimationFrame);
-    type(AnimationLoop);
-    type(CssAnimationMap);
-    type(AnimationOptimizer);
-    type(NgAnimateDirective);
-    type(NgAnimateChildrenDirective);
-    type(NgAnimate, implementedBy: CssAnimate);
+class AnimationModule extends Module {
+  AnimationModule() {
+    bind(AnimationFrame);
+    bind(AnimationLoop);
+    bind(CssAnimationMap);
+    bind(AnimationOptimizer);
+    bind(NgAnimate, toValue: null);
+    bind(NgAnimateChildren);
+    bind(Animate, toImplementation: CssAnimate);
   }
 }

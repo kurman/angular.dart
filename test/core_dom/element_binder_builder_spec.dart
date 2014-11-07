@@ -3,14 +3,14 @@ library angular.dom.element_binder_spec;
 import '../_specs.dart';
 import 'dart:mirrors';
 
-@NgComponent(selector:'component')            class _Component{}
-@NgDirective(selector:'[ignore-children]',
-             children: NgAnnotation.IGNORE_CHILDREN)
+@Component(selector:'component')            class _Component{}
+@Decorator(selector:'[ignore-children]',
+             children: Directive.IGNORE_CHILDREN)
                                               class _IgnoreChildren{}
-@NgDirective(selector:'[structural]',
-             children: NgAnnotation.TRANSCLUDE_CHILDREN)
+@Decorator(selector:'[structural]',
+             children: Directive.TRANSCLUDE_CHILDREN)
                                               class _Structural{}
-@NgDirective(selector:'[directive]')          class _DirectiveAttr{}
+@Decorator(selector:'[directive]')          class _DirectiveAttr{}
 
 
 directiveFor(i) {
@@ -24,21 +24,21 @@ main() => describe('ElementBinderBuilder', () {
 
   beforeEachModule((Module module) {
     module
-      ..type(_DirectiveAttr)
-      ..type(_Component)
-      ..type(_IgnoreChildren)
-      ..type(_Structural);
+      ..bind(_DirectiveAttr)
+      ..bind(_Component)
+      ..bind(_IgnoreChildren)
+      ..bind(_Structural);
   });
 
-  beforeEach((DirectiveMap d, ElementBinderFactory f) {
+  beforeEach((DirectiveMap d, ElementBinderFactory f, Injector i) {
     directives = d;
-    b = f.builder();
+    b = f.builder(null, null, i);
   });
 
   addDirective(selector) {
-    directives.forEach((NgAnnotation annotation, Type type) {
+    directives.forEach((Directive annotation, Type type) {
       if (annotation.selector == selector)
-        b.addDirective(new DirectiveRef(node, type, annotation, null));
+        b.addDirective(new DirectiveRef(node, type, annotation, new Key(type), null));
     });
     b = b.binder;
   }
@@ -49,17 +49,17 @@ main() => describe('ElementBinderBuilder', () {
     addDirective('[directive]');
 
     expect(b.decorators.length).toEqual(1);
-    expect(b.component).toBeNull();
-    expect(b.childMode).toEqual(NgAnnotation.COMPILE_CHILDREN);
+    expect(b.componentData).toBeNull();
+    expect(b.childMode).toEqual(Directive.COMPILE_CHILDREN);
 
   });
 
-  it('should add a component', () {
+  it('should add a component', async(() {
     addDirective('component');
 
     expect(b.decorators.length).toEqual(0);
-    expect(b.component).toBeNotNull();
-  });
+    expect(b.componentData).toBeNotNull();
+  }));
 
   it('should add a template', () {
     addDirective('[structural]');
@@ -71,7 +71,7 @@ main() => describe('ElementBinderBuilder', () {
     addDirective('[ignore-children]');
 
     expect(b.decorators.length).toEqual(1);
-    expect(b.component).toBeNull();
-    expect(b.childMode).toEqual(NgAnnotation.IGNORE_CHILDREN);
+    expect(b.componentData).toBeNull();
+    expect(b.childMode).toEqual(Directive.IGNORE_CHILDREN);
   });
 });

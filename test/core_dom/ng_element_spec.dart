@@ -2,12 +2,17 @@ library ng_element_spec;
 
 import '../_specs.dart';
 
+class _MockLightDom extends Mock implements DestinationLightDom {
+  // Prevent analyzer from complaining about missing method impl
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   describe('ngElement', () {
 
     describe('classes', () {
       it('should add classes to the element on domWrite',
-          (TestBed _, NgAnimate animate) {
+          (TestBed _, Animate animate) {
 
         var scope = _.rootScope;
         var element = e('<div></div>');
@@ -27,7 +32,7 @@ void main() {
       });
 
       it('should remove classes from the element on domWrite',
-          (TestBed _, NgAnimate animate) {
+          (TestBed _, Animate animate) {
 
         var scope = _.rootScope;
         var element = e('<div class="one two three four"></div>');
@@ -50,7 +55,7 @@ void main() {
       });
 
       it('should always apply the last dom operation on the given className',
-          (TestBed _, NgAnimate animate) {
+          (TestBed _, Animate animate) {
 
         var scope = _.rootScope;
         var element = e('<div></div>');
@@ -79,7 +84,7 @@ void main() {
 
   describe('attributes', () {
     it('should set attributes on domWrite to the element',
-        (TestBed _, NgAnimate animate) {
+        (TestBed _, Animate animate) {
 
       var scope = _.rootScope;
       var element = e('<div></div>');
@@ -99,7 +104,7 @@ void main() {
     });
 
     it('should remove attributes from the element on domWrite ',
-        (TestBed _, NgAnimate animate) {
+        (TestBed _, Animate animate) {
 
       var scope = _.rootScope;
       var element = e('<div id="foo" title="bar"></div>');
@@ -118,7 +123,7 @@ void main() {
     });
 
     it('should always apply the last operation on the attribute',
-        (TestBed _, NgAnimate animate) {
+        (TestBed _, Animate animate) {
 
       var scope = _.rootScope;
       var element = e('<div></div>');
@@ -142,6 +147,21 @@ void main() {
 
       expect(element).toHaveAttribute('id', 'foo');
 
+    });
+  });
+
+  describe('light dom notification', () {
+    it('should notify light dom on dom write',
+        (RootScope scope, Animate animate) {
+
+      var element = e('<div></div>');
+      var lightDom = new _MockLightDom();
+      var ngElement = new NgElement(element, scope, animate, lightDom);
+
+      ngElement.setAttribute('id', 'foo');
+      scope.apply();
+
+      lightDom.getLogs(callsTo('redistribute')).verify(happenedOnce);
     });
   });
 }
